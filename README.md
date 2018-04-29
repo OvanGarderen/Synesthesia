@@ -1,4 +1,14 @@
-# Synesthesia
+Synesthesia
+===========
+
+The goal of this project is to generate animated so-called _replications_ from still images.
+To do this we plan to blend various algorithms and image-manipulation techniques together,
+such as distance based HSV-adjustments, Shepards-transforms, DeepDream.
+The end-game would be to link the blending and parameter-choices to some kind of other
+signal, such as a musical one, which would create a form of synesthesia.
+
+Usage
+-----
 
 Make the main executable:
 ```
