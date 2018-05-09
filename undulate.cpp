@@ -187,7 +187,6 @@ int main(int argc, char * argv[])
   return 0;
 }
 
-
 void canny_threshold(const char * img, int thresh)
 {
   Mat src = imread(img);
@@ -196,30 +195,53 @@ void canny_threshold(const char * img, int thresh)
   { exit(1); }
 
   /// Convert the image to grayscale and blur slightly to reduce noise
-  Mat gray, sobx, soby;
+  Mat gray, sobx, soby, canny;
   cvtColor( src, gray, CV_BGR2GRAY );
   blur( gray, gray, Size(3,3) );
 
   // magic params
   int lowThreshold = thresh;
-  int ratio = 3;
+  int highThreshold = 3 * thresh;
   int kernel_size = 3;
 
-  /// Canny detector
-  Canny( gray, gray, lowThreshold, lowThreshold*ratio, kernel_size );
+  namedWindow( "Canny edge", CV_WINDOW_AUTOSIZE );
+
+  auto canny_update = [&lowThreshold, &highThreshold, &kernel_size, &gray, &canny]() {
+    Canny( gray, canny, lowThreshold, highThreshold, kernel_size );
+
+    Mat show;
+    Size size(900, 600);
+    resize(canny, show, size);
+    imshow( "Canny edge", show);
+  };
+  auto thunk=[](int inp, void* arg){ // note thunk is captureless
+    (*static_cast<decltype(canny_update)*>(arg))();
+  };
+
+  /// Create Erosion Trackbar
+  createTrackbar( "Low threshold", "Canny edge",
+                  &lowThreshold, 300,
+                  thunk, &canny_update);
+
+  createTrackbar( "High threshold", "Canny edge",
+                  &highThreshold, 300,
+                  thunk, &canny_update);
+
+  canny_update();
+  waitKey(0);
 
   // write to a temporary file
   std::vector<int> compression_params;
   compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
   compression_params.push_back(9);
 
-  imwrite("temp/canny.png", gray, compression_params);
+  imwrite("temp/canny.png", canny, compression_params);
 
   // do a distance transform
   Mat dst;
 
-  bitwise_not (gray, gray);
-  distanceTransform(gray, dst, CV_DIST_L2, CV_DIST_MASK_PRECISE);
+  bitwise_not (canny, canny);
+  distanceTransform(canny, dst, CV_DIST_L2, CV_DIST_MASK_PRECISE);
 
   Sobel( dst, sobx, CV_8U, 1, 0, 3, 2, 128, BORDER_DEFAULT);
   Sobel( dst, soby, CV_8U, 0, 1, 3, 2, 128, BORDER_DEFAULT);
