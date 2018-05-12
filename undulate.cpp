@@ -10,11 +10,12 @@
 #include "shader.h"
 #include <unistd.h>
 
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #include <sys/stat.h>
+
+#include "imgtools.h"
 
 using namespace std;
 using namespace cv;
@@ -144,6 +145,24 @@ int main(int argc, char * argv[])
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width2, height2, 0, GL_RGB, GL_UNSIGNED_BYTE, data2);
   stbi_image_free(data2);
 //DISTANCE MAP LOADED
+
+//LOAD DISPLACEMENT MAP
+  unsigned int texture3;
+  glGenTextures(1, &texture3);
+  glBindTexture(GL_TEXTURE_2D, texture3);
+  // set the texture wrapping/filtering options (on the currently bound texture object)
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  // load and generate the texture
+  int width3, height3, nrChannels3;
+  stbi_set_flip_vertically_on_load(true);  
+  unsigned char *data3 = stbi_load("temp/shepards.png", &width3, &height3, &nrChannels3, 0);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width3, height3, 0, GL_RGB, GL_UNSIGNED_BYTE, data3);
+  stbi_image_free(data3);
+//DISTANCE MAP LOADED
+
   
   std::cout << "starting loop" << std::endl;
   
@@ -166,11 +185,17 @@ int main(int argc, char * argv[])
     texLoc = glGetUniformLocation(shader.ID, "distanceMap");
     glUniform1i(texLoc, 1);
 
+    texLoc = glGetUniformLocation(shader.ID, "shepardsMap");
+    glUniform1i(texLoc, 2);
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
     
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, texture2);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, texture3);
 
     // render the quad
     shader.use();
@@ -239,6 +264,7 @@ void canny_threshold(const char * img, int thresh)
 
   // do a distance transform
   Mat dst;
+  Mat canny_cpy = canny.clone();
 
   bitwise_not (canny, canny);
   distanceTransform(canny, dst, CV_DIST_L2, CV_DIST_MASK_PRECISE);
@@ -260,4 +286,12 @@ void canny_threshold(const char * img, int thresh)
   merge(list, conv);
 
   imwrite("temp/distance.png", conv, compression_params);
+  
+  Mat shepards;
+  BuildFlowMap(canny_cpy, shepards);
+
+  Mat out;
+  cv::Size size = shepards.size();
+  shepards.convertTo(out, CV_8UC3, 128.0, 128.0);
+  imwrite("temp/shepards.png", out, compression_params);
 }

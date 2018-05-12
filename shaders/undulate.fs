@@ -7,6 +7,7 @@ in vec2 TexCoord;
 
 uniform sampler2D ourTexture;
 uniform sampler2D distanceMap;
+uniform sampler2D shepardsMap;
 uniform float param;
 
 vec3 rgb2hsv(vec3 c)
@@ -35,36 +36,38 @@ float triangle(float inp)
 void main()
 {  
   float distortion = .01;
-  vec2 dr = vec2(distortion * cos(param), distortion * sin(param));
-  vec2 dg = vec2(distortion * cos(-param + 2.094), distortion * sin(-param + 2.094));
-  vec2 db = vec2(.5 * distortion * cos(3.0 * param - 2.094), .5 * distortion * sin(3.0 * param - 2.094));
-  vec4 valr = .3 * texture(distanceMap, TexCoord);
-  vec4 valg = texture(distanceMap, TexCoord);
-  vec4 valb = texture(distanceMap, TexCoord);
 
   float mx = TexCoord.x * 2 - 1.0;
   float my = TexCoord.y * 2 - 1.0;
   float dist = pow(mx, 2.0) + pow(my, 2.0);
 
-  float dir = atan(valr.z - .5, valr.y-.5);
+  vec4 valdist = texture(distanceMap, TexCoord);
+  // apply a distortion
+  vec2 disp = vec2(0,0);
+  float stretching = 0.0;
+
+  for(int k=0; k < 20; k++)
+  {
+    vec4 val = texture(shepardsMap, TexCoord + disp);
+    vec4 valr = texture(distanceMap, TexCoord + disp);
+//    disp += .002 * cos(1.5 + 3 * param + 40 * dist) * (vec2(valr.y - .5, valr.z - .5));
+    stretching += .65 - val.x * val.x - val.y * val.y;
+    disp += .001 * cos(2.5 * param + 10 * valdist.x + 10 * (valr.z * my * my + valr.y * mx * mx)) * vec2(val.y - .55, val.x - .5);
+  }  
+
+  vec4 valr = .3 * texture(distanceMap, TexCoord + disp);
+  float dir = atan(valr.z - .5, valr.y -.5);
 
   float i = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8) - param + dir/3.1415);
   float j = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8) - param);
 
-  // apply a distortion
-  vec2 disp = vec2(0,0);
-  for(int k=0; k < 12; k++)
-  {
-    vec4 valr = .3 * texture(distanceMap, TexCoord + disp);
-    float dir = atan(valr.z - .5, valr.y-.5);	
-    disp += .02 * cos(3.5 * i) * (vec2(valr.y - .5, valr.z - .5) + vec2(.35, .35));
-  }  
 
+  vec4 val = texture(shepardsMap, TexCoord + disp);
   vec4 frag = texture(ourTexture, TexCoord + disp);
-  vec3 hsv = rgb2hsv(vec3(frag.x,frag.y,frag.z));
+  vec3 hsv = rgb2hsv(vec3(frag.x,frag.y, frag.z));
 
   vec3 blendcol = hsv2rgb(vec3(
-       hsv.x + .1 * sin(1.4 * i),  
+       hsv.x + .1 * sin(1.4 * i) + .1 * sin(2.4 * i),  
        hsv.y + .15 * triangle(2 * i), 
        hsv.z + .2 * (1.0 - 2* valr.x) * triangle(.5+ 5 * j + 3.5 * param)));
 
