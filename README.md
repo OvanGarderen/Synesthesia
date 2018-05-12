@@ -7,6 +7,8 @@ such as distance based HSV-adjustments, Shepards-transforms, DeepDream.
 The end-game would be to link the blending and parameter-choices to some kind of other
 signal, such as a musical one, which would create a form of synesthesia.
 
+![An example of a replication made with this program.](https://github.com/OvanGarderen/Synesthesia/blob/master/finished/output.gif?raw=true)
+
 Usage
 -----
 
