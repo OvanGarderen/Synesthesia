@@ -32,3 +32,10 @@
 *.app
 
 *~
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+gui
+undulate

@@ -47,7 +47,7 @@ int main(int argc, char * argv[])
     if (argc > 2) 
       canny_threshold(argv[1], atoi(argv[2]));
     else
-      canny_threshold(argv[1], 40);
+      canny_threshold(argv[1], 100);
   }
 
   glfwInit();
@@ -226,7 +226,7 @@ void canny_threshold(const char * img, int thresh)
 
   // magic params
   int lowThreshold = thresh;
-  int highThreshold = 3 * thresh;
+  int highThreshold = 2 * thresh;
   int kernel_size = 3;
 
   namedWindow( "Canny edge", CV_WINDOW_AUTOSIZE );
@@ -285,13 +285,15 @@ void canny_threshold(const char * img, int thresh)
   list.push_back(b);
   merge(list, conv);
 
-  imwrite("temp/distance.png", conv, compression_params);
-  
   Mat shepards;
   BuildFlowMap(canny_cpy, shepards);
 
   Mat out;
   cv::Size size = shepards.size();
   shepards.convertTo(out, CV_8UC3, 128.0, 128.0);
+
+  cv::destroyAllWindows();
+
+  imwrite("temp/distance.png", conv, compression_params);
   imwrite("temp/shepards.png", out, compression_params);
 }

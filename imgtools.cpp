@@ -16,9 +16,11 @@ void Dilate(cv::Mat &map, uint size, uint iterations)
 
 void InterpolateMap(cv::Mat &map)
 {
-  Dilate(map, 3, 3);
+  Dilate(map, 3, 5);
   GaussianBlur(map, map, cv::Size(5,5), 0);
   GaussianBlur(map, map, cv::Size(15,15), 0);
+  GaussianBlur(map, map, cv::Size(21,21), 0);
+  GaussianBlur(map, map, cv::Size(51,51), 0);
 }
 
 void BuildFlowMap(const cv::Mat &canny, cv::Mat &map)
@@ -32,10 +34,10 @@ void BuildFlowMap(const cv::Mat &canny, cv::Mat &map)
   findContours( canny, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
   std::sort(contours.begin(), contours.end(), 
 	    [](Contour a, Contour b) {
-	      return cv::arcLength(a,false) > cv::arcLength(b,false);
+	      return cv::arcLength(a,false) < cv::arcLength(b,false);
 	    });
 
-  double max_len = cv::arcLength(contours.at(0), false);
+  double max_len = cv::arcLength(contours.at(contours.size()-1), false);
 
   for(uint i = 0; i < contours.size(); i++) {
     double len = cv::arcLength(contours.at(i), false);
@@ -45,7 +47,7 @@ void BuildFlowMap(const cv::Mat &canny, cv::Mat &map)
       cv::drawContours(map, contours, i, cv::Scalar(0.0, 0.0, 0.0), 1);
     
     // flow medium contours
-    } else if (len > 50) {
+    } else if (len > .01 * max_len) {
       cv::Vec4f line;
       cv::fitLine(contours.at(i), line, cv::DIST_L2, 0, 0.01, 0.01);
 

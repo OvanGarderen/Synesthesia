@@ -24,8 +24,8 @@ vec3 rgb2hsv(vec3 c)
 vec3 hsv2rgb(vec3 c)
 {
     vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    vec3 p = abs(fract(clamp(c.xxx,0.0,1.0) + K.xyz) * 6.0 - K.www);
+    return clamp(c.z,0.0,1.0) * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), clamp(c.y,0.0,1.0));
 }
 
 float triangle(float inp)
@@ -46,20 +46,25 @@ void main()
   vec2 disp = vec2(0,0);
   float stretching = 0.0;
 
+  vec4 frag0 = texture(ourTexture, TexCoord);
+  vec3 hsv0 = rgb2hsv(vec3(frag0.x,frag0.y, frag0.z));
+    
+
   for(int k=0; k < 20; k++)
   {
     vec4 val = texture(shepardsMap, TexCoord + disp);
     vec4 valr = texture(distanceMap, TexCoord + disp);
-//    disp += .002 * cos(1.5 + 3 * param + 40 * dist) * (vec2(valr.y - .5, valr.z - .5));
+    disp += .0005 * cos(1.5 + 3 * param + 40 * dist) * (vec2(valr.y - .5, valr.z - .5));
     stretching += .65 - val.x * val.x - val.y * val.y;
-    disp += .001 * cos(2.5 * param + 10 * valdist.x + 10 * (valr.z * my * my + valr.y * mx * mx)) * vec2(val.y - .55, val.x - .5);
+    float phase = 1 * param + 10 * valdist.x + 10 * (0.001 * valr.z * my * my + valr.y * mx * mx);
+    disp += .001 * clamp(1.0 - .1 * dist, 0.0, 1.0) * vec2(cos(phase) *(val.y - .5), cos(phase) * (val.x - .5));
   }  
 
   vec4 valr = .3 * texture(distanceMap, TexCoord + disp);
   float dir = atan(valr.z - .5, valr.y -.5);
 
-  float i = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8) - param + dir/3.1415);
-  float j = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8) - param);
+  float i = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8) + dir/3.1415);
+  float j = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8));
 
 
   vec4 val = texture(shepardsMap, TexCoord + disp);
@@ -67,9 +72,9 @@ void main()
   vec3 hsv = rgb2hsv(vec3(frag.x,frag.y, frag.z));
 
   vec3 blendcol = hsv2rgb(vec3(
-       hsv.x + .1 * sin(1.4 * i) + .1 * sin(2.4 * i),  
-       hsv.y + .15 * triangle(2 * i), 
-       hsv.z + .2 * (1.0 - 2* valr.x) * triangle(.5+ 5 * j + 3.5 * param)));
+       hsv.x + .1 * clamp(1.0 - 4 * valr.x, 0.0, 1.0) * sin(1.4 * i + 3 * pow(my * mx,2.0) + 3 * param),  
+       hsv.y + .2 + .1 * sin(5 * j + 5.5 * param), 
+       hsv.z  -.1 + .25 * clamp(1.0 - 4 * valr.x, 0.0, 1.0) * triangle(.5+ 5 * j + 1.5 * param)));
 
   FragColor = vec4(blendcol,clamp(valr.x,0.0,.8));
 }
