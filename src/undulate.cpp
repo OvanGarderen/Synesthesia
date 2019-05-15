@@ -232,7 +232,12 @@ void canny_threshold(const char * img, int thresh)
   namedWindow( "Canny edge", CV_WINDOW_AUTOSIZE );
 
   auto canny_update = [&lowThreshold, &highThreshold, &kernel_size, &gray, &canny]() {
-    Canny( gray, canny, lowThreshold, highThreshold, kernel_size );
+    Mat link;
+    cv::medianBlur(gray, link, 2 *(highThreshold/20) + 1);
+    cv::adaptiveThreshold(link, canny, 255, CV_ADAPTIVE_THRESH_GAUSSIAN_C, CV_THRESH_BINARY_INV, 
+			  3 + 2 * (lowThreshold/8), 2);
+    
+    //Canny( link, canny, lowThreshold, highThreshold, kernel_size );
 
     Mat show;
     Size size(900, 600);
@@ -263,37 +268,32 @@ void canny_threshold(const char * img, int thresh)
   imwrite("temp/canny.png", canny, compression_params);
 
   // do a distance transform
-  Mat dst;
-  Mat canny_cpy = canny.clone();
-
-  bitwise_not (canny, canny);
-  distanceTransform(canny, dst, CV_DIST_L2, CV_DIST_MASK_PRECISE);
-
-  Sobel( dst, sobx, CV_8U, 1, 0, 3, 2, 128, BORDER_DEFAULT);
-  Sobel( dst, soby, CV_8U, 0, 1, 3, 2, 128, BORDER_DEFAULT);
-  Mat smoothx, smoothy;
-  GaussianBlur(sobx, smoothx, Size(5,5), 0, 0);
-  GaussianBlur(soby, smoothy, Size(5,5), 0, 0);
-
-  Mat r,g,b,conv;
-  vector<Mat> list;
-  smoothx.convertTo(r, CV_8UC1);
-  smoothy.convertTo(g, CV_8UC1);
-  dst.convertTo(b, CV_8UC1);
-  list.push_back(r);
-  list.push_back(g);
-  list.push_back(b);
-  merge(list, conv);
-
+  Mat distmap;
+  BuildDistanceMap(src, canny, distmap);
+		   
   Mat shepards;
-  BuildFlowMap(canny_cpy, shepards);
+  BuildFlowMap(canny, shepards);
 
   Mat out;
   cv::Size size = shepards.size();
   shepards.convertTo(out, CV_8UC3, 128.0, 128.0);
 
+  Mat dilated, eroded;
+  imshow("input", src);
+
+  Point3_<float> maxweights(0.0,.3,.7);
+  BetterDilate(src, dilated, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5,5)), maxweights);
+  Point3_<float> minweights(0.0,-.7,-.3);
+  BetterDilate(src, eroded, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5,5)), minweights);
+  
   cv::destroyAllWindows();
 
-  imwrite("temp/distance.png", conv, compression_params);
+  imwrite("temp/distance.png", distmap, compression_params);
+  std::cout << "Written temp/distance.png" << std::endl;
   imwrite("temp/shepards.png", out, compression_params);
+  std::cout << "Written temp/shepards.png" << std::endl;
+  imwrite("temp/dilated.png", dilated, compression_params);
+  std::cout << "Written temp/dilated.png" << std::endl;
+  imwrite("temp/eroded.png", eroded, compression_params);
+  std::cout << "Written temp/eroded.png" << std::endl;
 }

@@ -31,11 +31,20 @@
 *.out
 *.app
 
+#images and such
 *~
 *.png
 *.jpg
 *.jpeg
 *.gif
 *.mp4
-gui
-undulate
+*.webm
+*.mkv
+*.mpg
+*.kra
+
+#directories
+bin/
+images/
+input/
+temp/

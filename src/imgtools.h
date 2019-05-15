@@ -1,6 +1,14 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+/* BuildDistanceMap
+ * Given an image generate a distance impression based on distances to edges and luminosity
+ * 
+ * img - input image
+ * dst - returned map
+ */
+void BuildDistanceMap(const cv::Mat &img, const cv::Mat &canny, cv::Mat &map);
+
 /* BuildFlowMap
  * Given a canny edge detection of an image, extract displacement vectors along
  * edges and draw them into the image as a colourvalue
@@ -32,3 +40,15 @@ void ShepardsMap(const cv::Mat &src, cv::Mat &dst, uint n_vectors, double *data)
  * returns the actual number of displacements generated
  */
 uint GenDisplacements(const cv::Mat &canny, uint max, double *data);
+
+/* BetterDilate
+ * Allows for better dilation effect for multi-channel images
+ * 
+ * 
+ * src - input image
+ * dst - output image
+ * elm - structuring element that gets applied to the luminosity
+ *
+ * returns the actual number of displacements generated
+ */
+void BetterDilate(const cv::Mat &src, cv::Mat &dst, cv::Mat elm, cv::Point3_<int> weights);

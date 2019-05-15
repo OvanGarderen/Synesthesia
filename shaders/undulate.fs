@@ -57,14 +57,16 @@ void main()
     disp += .0005 * cos(1.5 + 3 * param + 40 * dist) * (vec2(valr.y - .5, valr.z - .5));
     stretching += .65 - val.x * val.x - val.y * val.y;
     float phase = 1 * param + 10 * valdist.x + 10 * (0.001 * valr.z * my * my + valr.y * mx * mx);
-    disp += .001 * clamp(1.0 - .1 * dist, 0.0, 1.0) * vec2(cos(phase) *(val.y - .5), cos(phase) * (val.x - .5));
+    disp += clamp(1.0/dist,0.0,1.0) * .001 * clamp(1.0 - .1 * dist, 0.0, 1.0) * vec2(cos(phase) *(val.y - .5), cos(phase) * (val.x - .5));
   }  
 
   vec4 valr = .3 * texture(distanceMap, TexCoord + disp);
+  float intensity = 1.0 - valr.x;
+
   float dir = atan(valr.z - .5, valr.y -.5);
 
-  float i = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8) + dir/3.1415);
-  float j = (pow(3*valr.x + 2, 2.0) - 0 * clamp(dist * valr.x,0.02,6.8));
+  float i = (pow(3*intensity + 2, 2.0) - 0 * clamp(dist * intensity,0.02,6.8) + dir/3.1415);
+  float j = (pow(3*intensity + 2, 2.0) - 0 * clamp(dist * intensity,0.02,6.8));
 
 
   vec4 val = texture(shepardsMap, TexCoord + disp);
@@ -72,9 +74,9 @@ void main()
   vec3 hsv = rgb2hsv(vec3(frag.x,frag.y, frag.z));
 
   vec3 blendcol = hsv2rgb(vec3(
-       hsv.x + .1 * clamp(1.0 - 4 * valr.x, 0.0, 1.0) * sin(1.4 * i + 3 * pow(my * mx,2.0) + 3 * param),  
-       hsv.y + .2 + .1 * sin(5 * j + 5.5 * param), 
-       hsv.z  -.1 + .25 * clamp(1.0 - 4 * valr.x, 0.0, 1.0) * triangle(.5+ 5 * j + 1.5 * param)));
+       hsv.x + .1  * sin(1.4 * i + 3 * pow(my * mx,2.0) + 3 * param),  
+       hsv.y + .02 + .1 * sin(5 * j + 5.5 * param), 
+       hsv.z + .025 * triangle(.5+ 5 * j + 1.5 * param)));
 
-  FragColor = vec4(blendcol,clamp(valr.x,0.0,.8));
+  FragColor = vec4(blendcol,1.0);
 }

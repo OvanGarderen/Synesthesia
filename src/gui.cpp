@@ -31,10 +31,11 @@
 #include <chrono>
 #include <libgen.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+#include <opencv2/opencv.hpp>
 
+#include "render_ffmpeg.h"
 #include "loadImageDir.h"
+#include "GLTexture.hpp"
 
 using std::cout;
 using std::cerr;
@@ -45,74 +46,6 @@ using std::pair;
 using std::to_string;
 using namespace std::chrono;
 
-class GLTexture {
-public:
-  using handleType = std::unique_ptr<uint8_t[], void(*)(void*)>;
-  GLTexture() = default;
-  GLTexture(const std::string& textureName)
-    : mTextureName(textureName), mTextureId(0) {}
-
-  GLTexture(const std::string& textureName, GLint textureId)
-    : mTextureName(textureName), mTextureId(textureId) {}
-
-  GLTexture(const GLTexture& other) = delete;
-  GLTexture(GLTexture&& other) noexcept
-    : mTextureName(std::move(other.mTextureName)),
-      mTextureId(other.mTextureId) {
-    other.mTextureId = 0;
-  }
-  GLTexture& operator=(const GLTexture& other) = delete;
-  GLTexture& operator=(GLTexture&& other) noexcept {
-    mTextureName = std::move(other.mTextureName);
-    std::swap(mTextureId, other.mTextureId);
-    return *this;
-  }
-  ~GLTexture() noexcept {
-    if (mTextureId)
-      glDeleteTextures(1, &mTextureId);
-  }
-
-  GLuint texture() const { return mTextureId; }
-  const std::string& textureName() const { return mTextureName; }
-
-  /**
-   *  Load a file in memory and create an OpenGL texture.
-   *  Returns a handle type (an std::unique_ptr) to the loaded pixels.
-   */
-  handleType load(const std::string& fileName) {
-    if (mTextureId) {
-      glDeleteTextures(1, &mTextureId);
-      mTextureId = 0;
-    }
-    int force_channels = 0;
-    int w, h, n;
-    handleType textureData(stbi_load(fileName.c_str(), &w, &h, &n, force_channels), stbi_image_free);
-    if (!textureData)
-      throw std::invalid_argument("Could not load texture data from file " + fileName);
-    glGenTextures(1, &mTextureId);
-    glBindTexture(GL_TEXTURE_2D, mTextureId);
-    GLint internalFormat;
-    GLint format;
-    switch (n) {
-    case 1: internalFormat = GL_R8; format = GL_RED; break;
-    case 2: internalFormat = GL_RG8; format = GL_RG; break;
-    case 3: internalFormat = GL_RGB8; format = GL_RGB; break;
-    case 4: internalFormat = GL_RGBA8; format = GL_RGBA; break;
-    default: internalFormat = 0; format = 0; break;
-    }
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, GL_UNSIGNED_BYTE, textureData.get());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    return textureData;
-  }
-
-private:
-  std::string mTextureName;
-  GLuint mTextureId;
-};
-
 class App : public nanogui::Screen {
 public:
   App() : nanogui::Screen(Eigen::Vector2i(1024, 768), "NanoGUI Test") {
@@ -122,6 +55,36 @@ public:
     glGetIntegerv(GL_MAX_FRAGMENT_UNIFORM_VECTORS, &maxVertUniformsVect);
     std::cout << maxVertUniformsVect << std::endl;
 
+    // generate framebuffer and its texture
+    glGenFramebuffers(1, &frameBuffer);
+    glGenTextures(1, &frameTex);
+
+    // open video
+    vidstream.open("walk.mp4");
+    depthstream.open("temp/depth.mp4");
+    dispstream.open("temp/shepards.mp4");
+
+    cv::Mat out;
+    vidstream.read(out);
+    currentTex.load(out);
+
+    depthstream.read(out);
+    currentDepth.load(out);
+
+    dispstream.read(out);
+    currentDisp.load(out);
+
+    // change size to match video
+    glBindTexture(GL_TEXTURE_2D, frameTex);    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 
+		 currentTex.w, currentTex.h, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);   
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);  
+
+    // bind texture to framebuffer
+    glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, frameTex, 0);
+    
     /**
      * Load image data
      **/
@@ -151,8 +114,10 @@ public:
     /**
      * Widgets
      **/
-    auto window = new Window(this, "File selection");
-    window->setPosition(Vector2i(200, 15));
+
+    // Image panel 
+    auto window = new Window(this, "File");
+    window->setPosition(Vector2i(20, 15));
     window->setLayout(new GroupLayout());
 
     new Label(window, "Image panel & scroll panel", "sans-bold");
@@ -162,17 +127,25 @@ public:
     VScrollPanel *vscroll = new VScrollPanel(popup);
     ImagePanel *imgPanel = new ImagePanel(vscroll);
     imgPanel->setImages(images);
-    popup->setFixedSize(Vector2i(245, 150));
+    popup->setFixedSize(Vector2i(300, 100));
 
     // Change the active textures.
     imgPanel->setCallback([this](int i) {
 	this->setCurrentImage(i);
-	cout << "Selected item " << i << '\n';
+	cout << "Selected item " << i << std::endl;
+      });
+    
+    Button *b = new Button(window, "Output to file", ENTYPO_ICON_CLAPPERBOARD);
+    b->setCallback([this](){
+	// render 400 frames
+	this->renderToFile(2000);
+	//this->hideWindows();
+	cout << "Started rendering to file" << std::endl;
       });
 
-    /* Distortion control panel */
+    // Distortion control panel
     window = new Window(this, "Distortion");
-    window->setPosition(Vector2i(200, 15));
+    window->setPosition(Vector2i(20, 115));
     window->setLayout(new GroupLayout());
 
     new Label(window, "Speedup", "sans-bold");
@@ -190,9 +163,9 @@ public:
     new UniformSlider(this, window, "distxPhaseDistort", std::make_pair(-20.0f,20.0f), 0.0f);
     new UniformSlider(this, window, "distyPhaseDistort", std::make_pair(-20.0f,20.0f), 0.0f);
 
-    /* HSV control panel */
+    // HSV control panel 
     window = new Window(this, "HSV control");
-    window->setPosition(Vector2i(200, 15));
+    window->setPosition(Vector2i(800, 15));
     window->setLayout(new GroupLayout());
 
     new Label(window, "Hue (frequency/wavelength/amplitude/offset)", "sans-bold");
@@ -204,20 +177,21 @@ public:
     new Label(window, "Saturation (frequency/wavelength/amplitude/offset)", "sans-bold");
     new UniformSlider(this, window, "freqSat", std::make_pair(0.5f,10.0f), 5.5f);
     new UniformSlider(this, window, "wlenSat", std::make_pair(0.1f,5.0f), 3.0f);
-    new UniformSlider(this, window, "ampSat", std::make_pair(0.1f,.5f), .1f);
-    new UniformSlider(this, window, "offSat", std::make_pair(-.5f,.5f), 0.3f);
+    new UniformSlider(this, window, "ampSat", std::make_pair(0.0f,.5f), .1f);
+    new UniformSlider(this, window, "offSat", std::make_pair(0.0f,.5f), 0.3f);
 
     new Label(window, "Value (frequency/wavelength/amplitude/offset)", "sans-bold");
     new UniformSlider(this, window, "freqVal", std::make_pair(0.5f,10.0f), 1.5f);
     new UniformSlider(this, window, "wlenVal", std::make_pair(0.1f,5.0f), 3.0f);
-    new UniformSlider(this, window, "ampVal", std::make_pair(0.1f,.5f), .25f);
-    new UniformSlider(this, window, "offVal", std::make_pair(-.5f,.5f), -0.1f);
+    new UniformSlider(this, window, "ampVal", std::make_pair(0.0f,.5f), .25f);
+    new UniformSlider(this, window, "offVal", std::make_pair(0.0f,.5f), -0.1f);
 
     performLayout();
 
-    shaderInit("shaders/gui_lsd.fs");
+    shaderInit("shaders/gui_dofblur.fs");
 
     msprev = high_resolution_clock::now();
+    lastframeTime = high_resolution_clock::now();
   }
 
   ~App() {
@@ -247,38 +221,107 @@ public:
 
   virtual void drawContents() {
     using namespace nanogui;
-      
+
+    // get the exact time
     high_resolution_clock::time_point now = high_resolution_clock::now();
-    time += (now - msprev).count()/2000000000.0;
+    
+    //The renderer slows us down a lot, so we need constant time interval per frame
+    if (renderer != nullptr) {
+      // advance time by one frame unit
+      time += 0.05;
+    } else {
+      time += duration_cast<milliseconds>(now - msprev).count()/1000.0;
+    }
+
+    // update clock
     msprev = now;
+
+    // advance a frame every tick (24 fps), if done, rewind
+    int ticks = 24 * duration_cast<milliseconds>(now - lastframeTime).count()/1000.0;
+    if ( ticks > 0 || renderer != nullptr) {
+    cv::Mat outVid, outDepth, outDisp;
+    bool gotFrame = true;
+    //  // try to get a couple of frames
+    //  for (int i = 0; i < ticks; i++) {
+    if (!(gotFrame = (vidstream.read(outVid) && depthstream.read(outDepth) && dispstream.read(outDisp)))) {
+      // stop the renderer at the end of the video
+      if (renderer != nullptr) renderer->stop();
       
-    /* Draw the window contents using OpenGL */
-    mShader.bind();
-      
+      // rewind stream and try again
+      vidstream.set(cv::CAP_PROP_POS_FRAMES, 0);
+      depthstream.set(cv::CAP_PROP_POS_FRAMES, 0);
+      dispstream.set(cv::CAP_PROP_POS_FRAMES, 0);
+      gotFrame = vidstream.read(outVid) && depthstream.read(outDepth) && dispstream.read(outDisp);
+    }
+    //}
+    if (gotFrame) {
+      currentTex.load(outVid);
+      currentDepth.load(outDepth);
+      currentDisp.load(outDisp);
+    }
+    lastframeTime = now;
+    }
+
+
+    // Draw the window contents using OpenGL
+    mShader.bind();      
     mShader.setUniform("time", time); 
-      
+
+    glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer);
+    glViewport(0, 0, currentTex.w, currentTex.h);
+
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, mImages.at(currentImage).first.texture());
+    glBindTexture(GL_TEXTURE_2D, currentTex.texture());
 
     auto lookup = mDataLayers.find("distance");
-    if (lookup == mDataLayers.end()) std::cout << "distance map not found" << std::endl;
+    //if (lookup == mDataLayers.end()) std::cout << "distance map not found" << std::endl;
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, lookup->second.first.texture());
+    glBindTexture(GL_TEXTURE_2D, currentDepth.texture()); //lookup->second.first.texture());
 
     lookup = mDataLayers.find("shepards");
-    if (lookup == mDataLayers.end()) std::cout << "flow map not found" << std::endl;
+    //if (lookup == mDataLayers.end()) std::cout << "flow map not found" << std::endl;
     glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, currentDisp.texture()); //lookup->second.first.texture());
+
+    lookup = mDataLayers.find("mixin1");
+    if (lookup == mDataLayers.end()) std::cout << "mixin layer 1 not found" << std::endl;
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, lookup->second.first.texture());
+
+    lookup = mDataLayers.find("mixin2");
+    if (lookup == mDataLayers.end()) std::cout << "mixin layer 2 not found" << std::endl;
+    glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, lookup->second.first.texture());
 
     mShader.drawIndexed(GL_TRIANGLES, 0, 2);
+
+    if (renderer != nullptr) {
+      renderFrame();
+    }
+
+    // now render to the actual screen
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, mFBSize(0), mFBSize(1));
+
+    trivialShader.bind();
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, frameTex);
+
+    // make sure the shader knows that the frame is a different size
+    float frameRatioX = ((float) currentTex.w)/mFBSize(0);
+    float frameRatioY = ((float) currentTex.h)/mFBSize(1);
+    trivialShader.setUniform("frameRatioX", frameRatioX);
+    trivialShader.setUniform("frameRatioY", frameRatioY);
+    trivialShader.drawIndexed(GL_TRIANGLES, 0, 2);
   }
 
   void shaderInit(const std::string fragment) {
     using namespace nanogui;
     
-    mShader.initFromFiles("LSD shader","shaders/gui.vs", fragment);
+    mShader.initFromFiles("GUI shader","shaders/gui.vs", fragment);
+    trivialShader.initFromFiles("Trivial shader", "shaders/gui.vs", "shaders/gui_trivial.fs");
     
-    MatrixXu indices(3, 2); /* Draw 2 triangles */
+    MatrixXu indices(3, 2); // Draw 2 triangles 
     indices.col(0) << 0, 1, 3;
     indices.col(1) << 1, 2, 3;
     
@@ -301,6 +344,8 @@ public:
     mShader.setUniform("textureMap", 1);
     mShader.setUniform("distanceMap", 2);
     mShader.setUniform("shepardsMap", 3);
+    mShader.setUniform("mixin1Map", 4);
+    mShader.setUniform("mixin2Map", 5);
 
     mShader.setUniform("ampDistort", 1.0f);
     mShader.setUniform("freqDistort", 1.0f);
@@ -325,8 +370,21 @@ public:
     mShader.setUniform("ampVal", .25f);
     mShader.setUniform("offVal", -0.1f);
 
+    trivialShader.bind();
+    trivialShader.uploadIndices(indices);
+    trivialShader.uploadAttrib("position", positions);
+    trivialShader.uploadAttrib("texcoord", texCoords);
+    trivialShader.setUniform("frame", 1);
   }
   
+  void renderFrame() {
+    renderer->step();
+    if (!renderer->active()) {
+      renderer = nullptr;
+      std::cout << "finished rendering" << std::endl;
+    }
+  }
+
   void setUniform(const std::string uniform, float value) {
     mShader.bind();
     mShader.setUniform(uniform, value);
@@ -336,19 +394,45 @@ public:
     currentImage = i;
   }
 
+  void renderToFile(uint i) {
+    renderer = std::make_unique<Renderer>("out.mpg", frameBuffer, i, currentTex.w, currentTex.h);
+
+    // rewind the video
+    vidstream.set(cv::CAP_PROP_POS_FRAMES, 0);
+    depthstream.set(cv::CAP_PROP_POS_FRAMES, 0);
+    dispstream.set(cv::CAP_PROP_POS_FRAMES, 0);
+  }
+
+  void hideWindows() {
+      hideAllWindows = true;
+  }
+
 private:
   nanogui::ProgressBar *mProgress;
   nanogui::GLShader mShader;
+  nanogui::GLShader trivialShader;
   
   using imageData = pair<GLTexture, GLTexture::handleType>;
   vector<imageData> mImages;
   uint currentImage = 8;
   std::map<std::string, imageData> mDataLayers;
-  
+
+  cv::VideoCapture vidstream;
+  cv::VideoCapture depthstream;
+  cv::VideoCapture dispstream;
+  GLTexture currentTex;
+  GLTexture currentDepth;
+  GLTexture currentDisp;
+  high_resolution_clock::time_point lastframeTime;
+
+  GLuint frameBuffer;
+  GLuint frameTex;
+
   high_resolution_clock::time_point msprev;
   float time = 0;
 
   bool hideAllWindows = false;
+  std::unique_ptr<Renderer> renderer = nullptr;
 
   class UniformSlider : public nanogui::Widget {
     public: 
@@ -379,7 +463,8 @@ int main(int argc, char ** argv) {
   try {
     nanogui::init();
 
-    /* scoped variables */ {
+    // scoped variables 
+    {
       nanogui::ref<App> app = new App();
       app->drawAll();
       app->setVisible(true);

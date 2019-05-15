@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <ctime>
 
+#include <opencv2/highgui.hpp>
+
 #include "imgtools.h"
 
 void Dilate(cv::Mat &map, uint size, uint iterations)
@@ -20,18 +22,46 @@ void InterpolateMap(cv::Mat &map)
   GaussianBlur(map, map, cv::Size(5,5), 0);
   GaussianBlur(map, map, cv::Size(15,15), 0);
   GaussianBlur(map, map, cv::Size(21,21), 0);
-  GaussianBlur(map, map, cv::Size(51,51), 0);
+  //GaussianBlur(map, map, cv::Size(51,51), 0);
+}
+
+void BuildDistanceMap(const cv::Mat &img, const cv::Mat &canny, cv::Mat &map)
+{
+  cv::Mat hsv;
+  cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
+  
+  cv::Mat chans[4];
+  cv::split(hsv, chans);
+
+  cv::Mat dst;
+  bitwise_not(canny, canny);
+  distanceTransform(canny, dst, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+  bitwise_not(canny, canny);
+  cv::waitKey(0);
+  dst.convertTo(chans[0], CV_8UC1);
+
+  // create blurred represention of value and saturation channels
+  cv::medianBlur(chans[2], chans[2], 5);
+  cv::medianBlur(chans[2], chans[2], 5);
+
+  cv::medianBlur(chans[1], chans[1], 5);
+  cv::medianBlur(chans[1], chans[1], 5);
+
+  cv::Mat merge;
+  cv::merge(chans, 3, merge);
+
+  map = merge;
 }
 
 void BuildFlowMap(const cv::Mat &canny, cv::Mat &map)
 {
-  map = cv::Mat(canny.size(), CV_64FC3);
+  cv::Mat temp(canny.size(), CV_64FC3, cv::Scalar(0.0));
 
   typedef std::vector<cv::Point> Contour;
   std::vector<Contour> contours;
   std::vector<cv::Vec4i> hierarchy;
 
-  findContours( canny, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+  findContours( canny, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
   std::sort(contours.begin(), contours.end(), 
 	    [](Contour a, Contour b) {
 	      return cv::arcLength(a,false) < cv::arcLength(b,false);
@@ -43,19 +73,19 @@ void BuildFlowMap(const cv::Mat &canny, cv::Mat &map)
     double len = cv::arcLength(contours.at(i), false);
     
     // fix large contours
-    if (len > .8 * max_len) {
-      cv::drawContours(map, contours, i, cv::Scalar(0.0, 0.0, 0.0), 1);
-    
+    //if (len > .8 * max_len) {
+    //  cv::drawContours(temp, contours, i, cv::Scalar(0.0, 0.0, 0.0), 1);
+    //
     // flow medium contours
-    } else if (len > .01 * max_len) {
+    //} else if (len > .01 * max_len) {
       cv::Vec4f line;
       cv::fitLine(contours.at(i), line, cv::DIST_L2, 0, 0.01, 0.01);
-
-      cv::drawContours(map, contours, i, cv::Scalar(0.0, line[0], line[1]), 1);
-    } 
+      cv::drawContours(temp, contours, i, cv::Scalar(0.0, line[0], line[1]), 1);
+    //} 
   }
 
-  InterpolateMap(map);
+  InterpolateMap(temp);
+  temp.copyTo(map);
 }
 
 /* ShepardsMap
@@ -123,7 +153,7 @@ uint GenDisplacements(const cv::Mat &canny, uint max, double *data)
   std::vector<cv::Vec4i> hierarchy;
 
   std::cout << " Finding contours " << std::endl;
-  findContours( canny, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+  findContours( canny, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
   
   std::cout << " Sorting contours " << std::endl;
   // sort the vector so we can extract the largest contours (this is not very optimized)
@@ -203,3 +233,47 @@ uint GenDisplacements(const cv::Mat &canny, uint max, double *data)
   return c_index;
 }
 
+/* BetterDilate
+ * Allows for better dilation effect for multi-channel images
+ * 
+ * 
+ * src - input image
+ * dst - output image
+ * elm - structuring element that gets applied to the luminosity
+ *
+ * returns the actual number of displacements generated
+ */
+void BetterDilate(const cv::Mat &src, cv::Mat &dst, cv::Mat elm, cv::Point3_<int> weights)
+{
+  dst = cv::Mat(src.size(), CV_8UC3);
+
+  cv::Mat conv;
+  cvtColor(src, conv, cv::COLOR_BGR2Lab);
+  src.copyTo(conv);
+
+  int ew = (elm.size().width-1)/2, eh = (elm.size().height-1)/2;
+  int h = src.size().height, w = src.size().width;
+
+  typedef cv::Point3_<uchar> Pixel;
+  
+  cv::Mat tmp = cv::Mat(src.size(), CV_8UC3);
+  tmp.forEach<Pixel> (
+    [&conv, h, w, eh, ew, &elm, weights](Pixel &pixel, const int * position) -> void {
+      Pixel topPix = conv.at<Pixel>(position[0], position[1]);
+      for (int i = -eh; i <= eh; i++) {
+	for (int j = -ew; j <= ew; j++) {
+	  if (elm.at<uchar>(i + eh, j + ew) == 0) continue;
+	  Pixel cur = conv.at<Pixel>(std::min(std::max(position[0] + i, 0), h-1), std::min(std::max(position[1] + j, 0), w-1));
+
+	  if (weights.x * cur.x + weights.y * cur.y + weights.z * cur.z > 
+	      weights.x * topPix.x + weights.y * topPix.y + weights.z * topPix.z) {
+	    topPix = cur;
+	  }
+	}
+      }
+      pixel = topPix;
+    });
+  
+  cvtColor(tmp, dst, cv::COLOR_Lab2BGR);
+  tmp.copyTo(dst);
+}
