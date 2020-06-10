@@ -1,3 +1,25 @@
+/* System */
+#include <iostream>
+#include <string>
+#include <cstring>
+#include <cstdint>
+#include <vector>
+#include <memory>
+#include <utility>
+#include <chrono>
+#include <libgen.h>
+
+using std::cout;
+using std::cerr;
+using std::endl;
+using std::string;
+using std::vector;
+using std::pair;
+using std::to_string;
+using namespace std::chrono;
+
+
+/* Nanogui */
 #include <nanogui/opengl.h>
 #include <nanogui/glutil.h>
 #include <nanogui/screen.h>
@@ -21,30 +43,17 @@
 #include <nanogui/colorpicker.h>
 #include <nanogui/graph.h>
 #include <nanogui/tabwidget.h>
-#include <iostream>
-#include <string>
-#include <cstring>
 
-#include <cstdint>
-#include <memory>
-#include <utility>
-#include <chrono>
-#include <libgen.h>
-
+/* OpenCV */
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/ximgproc.hpp>
 
+/* local includes */
 #include "render_ffmpeg.h"
 #include "loadImageDir.h"
 #include "GLTexture.hpp"
-
-using std::cout;
-using std::cerr;
-using std::endl;
-using std::string;
-using std::vector;
-using std::pair;
-using std::to_string;
-using namespace std::chrono;
+#include "shader_widget.hpp"
 
 class App : public nanogui::Screen {
 public:
@@ -60,7 +69,7 @@ public:
     glGenTextures(1, &frameTex);
 
     // open video
-    vidstream.open("walk.mp4");
+    vidstream.open("inputs/walk.mp4");
     depthstream.open("temp/depth.mp4");
     dispstream.open("temp/shepards.mp4");
 
@@ -102,7 +111,7 @@ public:
       } catch (std::invalid_argument &error) {
 	std::cout << error.what() << std::endl;
       }
-    }
+    }   
 
     for (auto& layer : temps) {
       GLTexture texture(layer.second);
@@ -144,10 +153,10 @@ public:
       });
 
     // Distortion control panel
-    window = new Window(this, "Distortion");
-    window->setPosition(Vector2i(20, 115));
-    window->setLayout(new GroupLayout());
+    shader = new ShaderWidget(this, "shaders/gui_lsd.json");
+    shader->setPosition(Vector2i(20, 115));
 
+    /*
     new Label(window, "Speedup", "sans-bold");
     auto slider = new UniformSlider(this, window, "freqDistort", std::make_pair(0.1f,10.0f), 1.0f);
 
@@ -185,17 +194,14 @@ public:
     new UniformSlider(this, window, "wlenVal", std::make_pair(0.1f,5.0f), 3.0f);
     new UniformSlider(this, window, "ampVal", std::make_pair(0.0f,.5f), .25f);
     new UniformSlider(this, window, "offVal", std::make_pair(0.0f,.5f), -0.1f);
+    */
 
     performLayout();
 
-    shaderInit("shaders/gui_dofblur.fs");
+    shaderInit();
 
     msprev = high_resolution_clock::now();
     lastframeTime = high_resolution_clock::now();
-  }
-
-  ~App() {
-    mShader.free();
   }
 
   virtual bool keyboardEvent(int key, int scancode, int action, int modifiers) {
@@ -208,7 +214,7 @@ public:
       std::cout << (hideAllWindows ? "true" : "false") << std::endl;
       return true;
     }
-
+    
     if (Screen::keyboardEvent(key, scancode, action, modifiers))
       return true;
 
@@ -262,10 +268,8 @@ public:
     lastframeTime = now;
     }
 
-
     // Draw the window contents using OpenGL
-    mShader.bind();      
-    mShader.setUniform("time", time); 
+    shader->activate(time);  
 
     glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer);
     glViewport(0, 0, currentTex.w, currentTex.h);
@@ -293,8 +297,8 @@ public:
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, lookup->second.first.texture());
 
-    mShader.drawIndexed(GL_TRIANGLES, 0, 2);
-
+    shader->draw();
+    
     if (renderer != nullptr) {
       renderFrame();
     }
@@ -315,61 +319,30 @@ public:
     trivialShader.drawIndexed(GL_TRIANGLES, 0, 2);
   }
 
-  void shaderInit(const std::string fragment) {
+  void shaderInit() {
     using namespace nanogui;
     
-    mShader.initFromFiles("GUI shader","shaders/gui.vs", fragment);
-    trivialShader.initFromFiles("Trivial shader", "shaders/gui.vs", "shaders/gui_trivial.fs");
+    if (shader != nullptr)
+      shader->shaderInit();
     
-    MatrixXu indices(3, 2); // Draw 2 triangles 
+    nanogui::MatrixXu indices(3, 2); // Draw 2 triangles 
     indices.col(0) << 0, 1, 3;
     indices.col(1) << 1, 2, 3;
     
-    MatrixXf positions(3, 4);
+    nanogui::MatrixXf positions(3, 4);
     positions.col(0) <<  1.0, -1.0, 0.0;
     positions.col(1) <<  1.0,  1.0, 0.0;
     positions.col(2) << -1.0,  1.0, 0.0;
     positions.col(3) << -1.0, -1.0, 0.0;
     
-    MatrixXf texCoords(2, 4);
+    nanogui::MatrixXf texCoords(2, 4);
     texCoords.col(0) <<  1.0,  1.0;
     texCoords.col(1) <<  1.0,  0.0;
     texCoords.col(2) <<  0.0,  0.0;
     texCoords.col(3) <<  0.0,  1.0;
+
+    trivialShader.initFromFiles("Trivial shader", "shaders/gui.vs", "shaders/gui_trivial.fs");
     
-    mShader.bind();
-    mShader.uploadIndices(indices);
-    mShader.uploadAttrib("position", positions);
-    mShader.uploadAttrib("texcoord", texCoords);
-    mShader.setUniform("textureMap", 1);
-    mShader.setUniform("distanceMap", 2);
-    mShader.setUniform("shepardsMap", 3);
-    mShader.setUniform("mixin1Map", 4);
-    mShader.setUniform("mixin2Map", 5);
-
-    mShader.setUniform("ampDistort", 1.0f);
-    mShader.setUniform("freqDistort", 1.0f);
-    mShader.setUniform("wobbleDistort", 1.0f);
-    mShader.setUniform("wobbleAngDistort", 0.0f);
-    mShader.setUniform("edgePhaseDistort", 1.0f);
-    mShader.setUniform("distxPhaseDistort", 1.0f);
-    mShader.setUniform("distyPhaseDistort", 1.0f);
-
-    mShader.setUniform("freqHue", 3.0f);
-    mShader.setUniform("wlenHue", 3.0f);
-    mShader.setUniform("ampHue", .1f);
-    mShader.setUniform("offHue", 0.0f);
-
-    mShader.setUniform("freqSat", 5.5f);
-    mShader.setUniform("wlenSat", 3.0f);
-    mShader.setUniform("ampSat", .1f);
-    mShader.setUniform("offSat", 0.3f);
-
-    mShader.setUniform("freqVal", 1.5f);
-    mShader.setUniform("wlenVal", 3.0f);
-    mShader.setUniform("ampVal", .25f);
-    mShader.setUniform("offVal", -0.1f);
-
     trivialShader.bind();
     trivialShader.uploadIndices(indices);
     trivialShader.uploadAttrib("position", positions);
@@ -383,11 +356,6 @@ public:
       renderer = nullptr;
       std::cout << "finished rendering" << std::endl;
     }
-  }
-
-  void setUniform(const std::string uniform, float value) {
-    mShader.bind();
-    mShader.setUniform(uniform, value);
   }
 
   void setCurrentImage(uint i) {
@@ -409,9 +377,10 @@ public:
 
 private:
   nanogui::ProgressBar *mProgress;
-  nanogui::GLShader mShader;
   nanogui::GLShader trivialShader;
-  
+
+  ShaderWidget *shader = nullptr;
+    
   using imageData = pair<GLTexture, GLTexture::handleType>;
   vector<imageData> mImages;
   uint currentImage = 8;
@@ -433,30 +402,6 @@ private:
 
   bool hideAllWindows = false;
   std::unique_ptr<Renderer> renderer = nullptr;
-
-  class UniformSlider : public nanogui::Widget {
-    public: 
-    UniformSlider(App * app, nanogui::Widget *parent, const char * name, std::pair<float,float> range, float value)
-      : nanogui::Widget(parent) {
-      using namespace nanogui;
-      
-      this->setLayout(new BoxLayout(Orientation::Horizontal, Alignment::Middle, 0, 40));
-      
-      Slider *slider = new Slider(this);
-      slider->setValue(value);
-      slider->setRange(range);
-      slider->setFixedWidth(100);
-
-      TextBox *textBox = new TextBox(this);
-      textBox->setFixedSize(Vector2i(100, 25));
-      textBox->setValue(std::to_string(value));
-
-      slider->setCallback([app, name, textBox](float value){
-	  app->setUniform(name, value);
-	  textBox->setValue(std::to_string(value));
-	});
-    }
-  };
 };
 
 int main(int argc, char ** argv) {

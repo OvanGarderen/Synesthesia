@@ -4,7 +4,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui.hpp>
 
-#include "glad.h"
+#include "../external/glad.h"
 #include <GLFW/glfw3.h>
 
 #include "shader.h"
@@ -221,7 +221,7 @@ void canny_threshold(const char * img, int thresh)
 
   /// Convert the image to grayscale and blur slightly to reduce noise
   Mat gray, sobx, soby, canny;
-  cvtColor( src, gray, CV_BGR2GRAY );
+  cvtColor( src, gray, cv::COLOR_BGR2GRAY );
   blur( gray, gray, Size(3,3) );
 
   // magic params
@@ -229,12 +229,12 @@ void canny_threshold(const char * img, int thresh)
   int highThreshold = 2 * thresh;
   int kernel_size = 3;
 
-  namedWindow( "Canny edge", CV_WINDOW_AUTOSIZE );
+  namedWindow( "Canny edge", cv::WINDOW_AUTOSIZE );
 
   auto canny_update = [&lowThreshold, &highThreshold, &kernel_size, &gray, &canny]() {
     Mat link;
     cv::medianBlur(gray, link, 2 *(highThreshold/20) + 1);
-    cv::adaptiveThreshold(link, canny, 255, CV_ADAPTIVE_THRESH_GAUSSIAN_C, CV_THRESH_BINARY_INV, 
+    cv::adaptiveThreshold(link, canny, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY_INV, 
 			  3 + 2 * (lowThreshold/8), 2);
     
     //Canny( link, canny, lowThreshold, highThreshold, kernel_size );
@@ -262,7 +262,7 @@ void canny_threshold(const char * img, int thresh)
 
   // write to a temporary file
   std::vector<int> compression_params;
-  compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+  compression_params.push_back(cv::IMWRITE_PNG_COMPRESSION);
   compression_params.push_back(9);
 
   imwrite("temp/canny.png", canny, compression_params);
