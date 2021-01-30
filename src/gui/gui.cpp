@@ -18,7 +18,6 @@ using std::pair;
 using std::to_string;
 using namespace std::chrono;
 
-
 /* Nanogui */
 #include <nanogui/opengl.h>
 #include <nanogui/glutil.h>
@@ -70,7 +69,7 @@ public:
 
     // open video
     vidstream.open("inputs/walk.mp4");
-    depthstream.open("temp/depth.mp4");
+    depthstream.open("inputs/walk_depth.mp4");
     dispstream.open("temp/shepards.mp4");
 
     cv::Mat out;
@@ -126,7 +125,7 @@ public:
 
     // Image panel 
     auto window = new Window(this, "File");
-    window->setPosition(Vector2i(20, 15));
+    window->setPosition(Eigen::Vector2i(20, 15));
     window->setLayout(new GroupLayout());
 
     new Label(window, "Image panel & scroll panel", "sans-bold");
@@ -152,49 +151,18 @@ public:
 	cout << "Started rendering to file" << std::endl;
       });
 
-    // Distortion control panel
-    shader = new ShaderWidget(this, "shaders/gui_lsd.json");
-    shader->setPosition(Vector2i(20, 115));
-
-    /*
-    new Label(window, "Speedup", "sans-bold");
-    auto slider = new UniformSlider(this, window, "freqDistort", std::make_pair(0.1f,10.0f), 1.0f);
-
-    new Label(window, "Distortion", "sans-bold");
-    new UniformSlider(this, window, "ampDistort", std::make_pair(0.0f,2.0f), 1.0f);
-
-    new Label(window, "Wobble", "sans-bold");
-    new UniformSlider(this, window, "wobbleDistort", std::make_pair(-2.0f,2.0f), 0.0f);
-    new UniformSlider(this, window, "wobbleAngDistort", std::make_pair(0.0f,3.1415f), 0.0f);
-
-    new Label(window, "Distort Phase", "sans-bold");
-    new UniformSlider(this, window, "edgePhaseDistort", std::make_pair(-20.0f,20.0f), 0.0f);
-    new UniformSlider(this, window, "distxPhaseDistort", std::make_pair(-20.0f,20.0f), 0.0f);
-    new UniformSlider(this, window, "distyPhaseDistort", std::make_pair(-20.0f,20.0f), 0.0f);
-
-    // HSV control panel 
-    window = new Window(this, "HSV control");
-    window->setPosition(Vector2i(800, 15));
-    window->setLayout(new GroupLayout());
-
-    new Label(window, "Hue (frequency/wavelength/amplitude/offset)", "sans-bold");
-    new UniformSlider(this, window, "freqHue", std::make_pair(0.5f,10.0f), 3.0f);
-    new UniformSlider(this, window, "wlenHue", std::make_pair(0.1f,5.0f), 3.0f);
-    new UniformSlider(this, window, "ampHue", std::make_pair(0.0f,.5f), .1f);
-    new UniformSlider(this, window, "offHue", std::make_pair(-.5f,.5f), 0.0f);
-
-    new Label(window, "Saturation (frequency/wavelength/amplitude/offset)", "sans-bold");
-    new UniformSlider(this, window, "freqSat", std::make_pair(0.5f,10.0f), 5.5f);
-    new UniformSlider(this, window, "wlenSat", std::make_pair(0.1f,5.0f), 3.0f);
-    new UniformSlider(this, window, "ampSat", std::make_pair(0.0f,.5f), .1f);
-    new UniformSlider(this, window, "offSat", std::make_pair(0.0f,.5f), 0.3f);
-
-    new Label(window, "Value (frequency/wavelength/amplitude/offset)", "sans-bold");
-    new UniformSlider(this, window, "freqVal", std::make_pair(0.5f,10.0f), 1.5f);
-    new UniformSlider(this, window, "wlenVal", std::make_pair(0.1f,5.0f), 3.0f);
-    new UniformSlider(this, window, "ampVal", std::make_pair(0.0f,.5f), .25f);
-    new UniformSlider(this, window, "offVal", std::make_pair(0.0f,.5f), -0.1f);
-    */
+    // shader selector
+    new Label(window, "Shader", "sans-bold");
+    Button *b2 = new Button(window, "Select shader", ENTYPO_ICON_CLAPPERBOARD);
+    b2->setCallback([this](){
+        auto results = nanogui::file_dialog(
+					    std::vector({std::pair(std::string("json"), std::string("Configuration file"))}), true, false);
+	std::cout << std::endl << results.back() << std::endl << std::endl;
+	this->setShader(results.back());
+	this->performLayout();
+    });
+    
+    setShader("shaders/gui_lsd_overlay.json");
 
     performLayout();
 
@@ -205,6 +173,7 @@ public:
   }
 
   virtual bool keyboardEvent(int key, int scancode, int action, int modifiers) {
+    
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
       setVisible(false);
       return true;
@@ -257,7 +226,9 @@ public:
       vidstream.set(cv::CAP_PROP_POS_FRAMES, 0);
       depthstream.set(cv::CAP_PROP_POS_FRAMES, 0);
       dispstream.set(cv::CAP_PROP_POS_FRAMES, 0);
-      gotFrame = vidstream.read(outVid) && depthstream.read(outDepth) && dispstream.read(outDisp);
+      cv::Mat outVid1;
+      gotFrame = vidstream.read(outVid1) && depthstream.read(outDepth) && dispstream.read(outDisp);
+      cv::bilateralFilter(outVid1, outVid, 9, 75, 75, cv::BORDER_DEFAULT); 
     }
     //}
     if (gotFrame) {
@@ -269,7 +240,7 @@ public:
     }
 
     // Draw the window contents using OpenGL
-    shader->activate(time);  
+    shader->bind(time);  
 
     glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer);
     glViewport(0, 0, currentTex.w, currentTex.h);
@@ -322,9 +293,6 @@ public:
   void shaderInit() {
     using namespace nanogui;
     
-    if (shader != nullptr)
-      shader->shaderInit();
-    
     nanogui::MatrixXu indices(3, 2); // Draw 2 triangles 
     indices.col(0) << 0, 1, 3;
     indices.col(1) << 1, 2, 3;
@@ -348,6 +316,19 @@ public:
     trivialShader.uploadAttrib("position", positions);
     trivialShader.uploadAttrib("texcoord", texCoords);
     trivialShader.setUniform("frame", 1);
+  }
+
+  void setShader(const std::string &path) {
+    // init shader widget from config file
+    auto p = std::make_unique<ShaderWidget>(this, path);
+    p->setPosition(Eigen::Vector2i(20, 115));
+
+    auto *old = shader.release();
+    if (old != nullptr)
+      removeChild(old);
+
+    // save a local reference
+    shader = std::move(p);
   }
   
   void renderFrame() {
@@ -379,7 +360,7 @@ private:
   nanogui::ProgressBar *mProgress;
   nanogui::GLShader trivialShader;
 
-  ShaderWidget *shader = nullptr;
+  std::unique_ptr<ShaderWidget> shader = nullptr;
     
   using imageData = pair<GLTexture, GLTexture::handleType>;
   vector<imageData> mImages;

@@ -9,28 +9,7 @@ uniform sampler2D distanceMap;
 uniform sampler2D shepardsMap;
 uniform float time;
 
-uniform float ampDistort;
-uniform float freqDistort;
-uniform float wobbleDistort;
-uniform float wobbleAngDistort;
-uniform float edgePhaseDistort;
-uniform float distxPhaseDistort;
-uniform float distyPhaseDistort;
-
-uniform float freqHue;
-uniform float wlenHue;
-uniform float ampHue;
-uniform float offHue;
-
-uniform float freqSat;
-uniform float wlenSat;
-uniform float ampSat;
-uniform float offSat;
-
-uniform float freqVal;
-uniform float wlenVal;
-uniform float ampVal;
-uniform float offVal;
+uniform float distort;
 
 vec3 rgb2hsv(vec3 c)
 {
@@ -136,12 +115,12 @@ void main()
   }
   
   vec2 posmax = layerpos(2.0, m, dist, time);
-  float radius = max(m.x * m.x, m.y * m.y);
+  float radius = max(m.x * m.x, m.y * m.y) * distort;
 
   mixr = getmix(m, time, dist, shep);
   FragColor = mix(texture(textureMap, .5 * (vec2(1.0,1.0) + m)) * mixr,
   (1.0 - totalalpha) * mix(
-  texture(textureMap, .5 * (vec2(1.0,1.0) + posmax)),
-  texture(textureMap, .5 * (vec2(1.0,1.0) + m)), radius) + col, 1.0 - radius);
+  texture(textureMap, .5 * (vec2(1.0,1.0) + posmax * distort)),
+  texture(textureMap, .5 * (vec2(1.0,1.0) + m)), radius * distort) + col, 1.0 - radius);
 
 }

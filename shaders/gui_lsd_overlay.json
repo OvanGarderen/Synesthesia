@@ -1,0 +1,78 @@
+{
+    "name" : "LSD Overlay Shader",
+    "path" : "shaders/gui_lsd_overlay.fs",
+    "type" : "overlay",
+    "textures" : [
+	"textureMap",
+	"distanceMap",
+	"shepardsMap",
+	"mixin1Map",
+	"mixin2Map"
+    ],
+    
+    "parameters" : [
+	{
+	    "name" : "Hue", "type" : "group", "children" : 
+	    [
+		{
+		    "name" : "Hue Frequency", "id" : "freqHue", "type" : "float",
+		    "min" : 0.1, "max" : 10.0, "val" : 3.0	
+		},
+		{
+		    "name" : "Hue Wave Len", "id" : "wlenHue", "type" : "float",
+		    "min" : 0.2, "max" : 8.0, "val" : 3.0	
+		},
+		{
+		    "name" : "Hue Wave Amp", "id" : "ampHue", "type" : "float",
+		    "min" : 0.0, "max" : 0.5, "val" : 0.1	
+		},
+		{
+		    "name" : "Hue Offset", "id" : "offHue", "type" : "float",
+		    "min" : -0.5, "max" : 0.5, "val" : 0.0	
+		}
+	    ]
+	},
+	{
+	    "name" : "Saturation", "type" : "group", "children" : 
+	    [
+		{
+		    "name" : "Sat Frequency", "id" : "freqSat", "type" : "float",
+		    "min" : 0.1, "max" : 10.0, "val" : 3.0	
+		},
+		{
+		    "name" : "Sat Wave Len", "id" : "wlenSat", "type" : "float",
+		    "min" : 0.2, "max" : 8.0, "val" : 3.0	
+		},
+		{
+		    "name" : "Sat Wave Amp", "id" : "ampSat", "type" : "float",
+		    "min" : 0.0, "max" : 0.5, "val" : 0.1	
+		},
+		{
+		    "name" : "Sat Offset", "id" : "offSat", "type" : "float",
+		    "min" : -0.2, "max" : 0.5, "val" : 0.1	
+		}
+	    ]
+	},
+	{
+	    "name" : "Value", "type" : "group", "children" : 
+	    [
+		{
+		    "name" : "Val Frequency", "id" : "freqVal", "type" : "float",
+		    "min" : 0.1, "max" : 10.0, "val" : 3.0	
+		},
+		{
+		    "name" : "Val Wave Len", "id" : "wlenVal", "type" : "float",
+		    "min" : 0.2, "max" : 8.0, "val" : 3.0	
+		},
+		{
+		    "name" : "Val Wave Amp", "id" : "ampVal", "type" : "float",
+		    "min" : 0.0, "max" : 0.5, "val" : 0.1	
+		},
+		{
+		    "name" : "Val Offset", "id" : "offVal", "type" : "float",
+		    "min" : -0.2, "max" : 0.5, "val" : -0.1 
+		}
+	    ]
+	}
+    ]
+}

@@ -1,0 +1,14 @@
+{
+    "name" : "Foreground cutoff",
+    "path" : "shaders/foreground.fs",
+    
+    "textures" : [
+	"textureMap",
+	"distanceMap",
+	"shepardsMap",
+	"mixin1Map",
+	"mixin2Map"
+    ],
+    
+    "parameters" : {}
+}

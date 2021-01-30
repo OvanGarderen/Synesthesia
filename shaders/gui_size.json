@@ -1,0 +1,21 @@
+{
+    "name" : "Size Shader",
+    "path" : "shaders/gui_size.fs",
+    
+    "textures" : [
+	"textureMap",
+	"distanceMap"
+    ],
+    
+    "parameters" : [
+	{
+	    "name" : "Modify", "type" : "group", "children" : 
+	    [
+		{
+		    "name" : "Distortion", "id" : "distort", "type" : "float",
+		    "min" : 0.0, "max" : 2.0, "val" : 1.0
+		}
+	    ]
+	}
+    ]
+}
